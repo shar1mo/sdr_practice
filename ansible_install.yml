@@ -1,0 +1,87 @@
+---
+- name: Build and install System Level Simulation 
+  hosts: localhost
+  become: true
+  vars:
+    install_path: "{{ install_path }}"
+    install_user: "{{ install_user }}"
+    debug_mode: false  # true для включения режима отладки
+  tasks:
+    - name: Update and upgrade apt packages
+      apt:
+        update_cache: yes
+        upgrade: yes
+
+    - name: Install required packages
+      apt:
+        name: 
+          - build-essential 
+          - cmake
+          - g++
+          - libpython3-dev
+          - python3-pip
+          - python3-setuptools
+          - python3-numpy
+          - swig
+          - python3-matplotlib
+          - libfftw3-dev 
+          - libmbedtls-dev 
+          - libboost-program-options-dev 
+          - libconfig++-dev 
+          - libsctp-dev
+          - libsdl2-dev
+          - libgl1-mesa-dev
+          - libglew-dev
+          - libxml2
+          - libxml2-dev
+          - bison
+          - flex
+          - libcdk5-dev
+          - libusb-1.0-0-dev
+          - libaio-dev
+          - pkg-config
+          - libavahi-common-dev
+          - libavahi-client-dev
+          # - nlohmann-json3-dev
+        state: present
+
+    # - name: Update submodules
+    #   shell: |
+    #     git submodule update --init --recursive
+    #     git submodule update --remote --recursive
+        
+    - name: Compile, and install SoapySDR
+      shell: |
+        cd {{ install_path }}/thirdparty/SoapySDR
+        mkdir build && cd build
+        cmake ../
+        make -j16
+        sudo make install
+        sudo ldconfig
+
+    - name: Compile, and install libiio
+      shell: |
+        cd {{ install_path }}/thirdparty/libiio
+        mkdir build && cd build
+        cmake ../
+        make -j16
+        sudo make install
+        sudo ldconfig
+
+    - name: Compile, and install libad9361-iio
+      shell: |
+        cd {{ install_path }}/thirdparty/libad9361-iio
+        mkdir build && cd build
+        cmake ../
+        make -j16
+        sudo make install
+        sudo ldconfig
+
+    - name: Compile, and install SoapyPlutoSDR
+      shell: |
+        cd {{ install_path }}/thirdparty/SoapyPlutoSDR
+        mkdir build && cd build
+        cmake ../
+        make -j16
+        sudo make install
+        sudo ldconfig

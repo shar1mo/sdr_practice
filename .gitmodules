@@ -1,0 +1,36 @@
+[submodule "thirdparty/SoapySDR"]
+	path = thirdparty/SoapySDR
+	url = https://github.com/TelecomDep/SoapySDR.git
+    branch = soapy-sdr-0.8.1
+
+[submodule "thirdparty/libiio"]
+	path = thirdparty/libiio
+	url = https://github.com/TelecomDep/libiio.git
+    branch = v0.24
+
+[submodule "thirdparty/libad9361-iio"]
+	path = thirdparty/libad9361-iio
+	url = https://github.com/TelecomDep/libad9361-iio.git
+    branch = v0.3
+
+[submodule "thirdparty/SoapyPlutoSDR"]
+	path = thirdparty/SoapyPlutoSDR
+	url = https://github.com/TelecomDep/SoapyPlutoSDR.git
+	branch = sdr_gadget_timestamping
+[submodule "thirdparty/imgui"]
+	path = thirdparty/imgui
+	url = https://github.com/ocornut/imgui.git
+	branch = docking
+[submodule "thirdparty/implot"]
+	path = thirdparty/implot
+	url = https://github.com/epezent/implot.git
+[submodule "thirdparty/third_party/implot"]
+	path = thirdparty/third_party/implot
+	url = https://github.com/epezent/implot.git
+[submodule "thirdparty/third_party/imgui"]
+	path = thirdparty/third_party/imgui
+	url = https://github.com/ocornut/imgui.git
+	branch = docking
+[submodule "third_party/implot"]
+	path = third_party/implot
+	url = https://github.com/epezent/implot.git
