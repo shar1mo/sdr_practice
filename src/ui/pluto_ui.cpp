@@ -124,11 +124,6 @@ void show_properties_window(sdr_global_t *sdr)
     static int counter = 0;
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     ImGui::Begin("Properties");
-    if (ImGui::Button("Button"))
-        counter++;
-    ImGui::Text("counter = %d", counter);
-    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-    ImGui::Text("Window size: %lfx%lf", ImGui::GetWindowSize().x, ImGui::GetWindowSize().y);
     
     ImGui::Separator();
     ImGui::Text("Signal Processing Status:");

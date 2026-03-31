@@ -26,7 +26,6 @@
 struct SoapySDRDevice *setup_pluto_sdr(sdr_config_t *config)
 {
     // Создание сущности устройства
-    // args can be user defined or from the enumeration result
     SoapySDRKwargs args = {};
     char buffer_size[10]; // Allocate enough space
     sprintf(buffer_size, "%d", config->buffer_size);
@@ -96,7 +95,6 @@ struct SoapySDRStream *setup_stream(struct SoapySDRDevice *sdr, sdr_config_t *co
                 printf("setGain rx fail: %s\n", SoapySDRDevice_lastError());
             }
             
-            // Получение MTU (Maximum Transmission Unit), в нашем случае - размер буферов. 
             size_t rx_mtu = SoapySDRDevice_getStreamMTU(sdr, stream);
             printf("MTU - RX: %lu\n",rx_mtu);
 
@@ -137,12 +135,7 @@ void fill_test_tx_buffer(int16_t *buffer, int size)
     std::cout << "modulated_array size = " << modulated_array.size() << std::endl;
     std::cout << "upsampled_bit_array size = " << upsampled_bit_array.size() << std::endl;
     std::cout << "pulse_shaped size = " << pulse_shaped.size() << std::endl;
-    // заполнение tx_buff значениями сэмплов первые 16 бит - I, вторые 16 бит - Q.
-    // for (int i = 0; i < pulse_shaped.size(); i++)
-    // {
-    //     std::cout << pulse_shaped[i] << " ";
-    // }
-    // std::cout << std::endl;
+
     for (int i = 0; i < 2 * size; i+=2)
     {
         buffer[i] = int(pulse_shaped[i].real() * 2000) << 4;
@@ -274,13 +267,6 @@ void prepare_test_tx_buffer(sdr_global_t *sdr)
 
     std::cout << "text len = " << hello_sibguti.size() << std::endl;
 
-    // 3. Модуляция 4_2_QAM
-    // std::vector<int> pam_4_data;
-    // pam_4(hello_sibguti, pam_4_data);
-    // std::cout << "pam_4_data = " << pam_4_data.size() << std::endl;
-
-    // std::vector<std::complex<double>> modulated_data;
-    // pam_4_to_qam_4_2(pam_4_data, modulated_data);
     // 3. Модуляция QPSK
     std::vector<std::complex<double>> modulated_data = modulate(hello_sibguti, 1);
 
@@ -301,6 +287,7 @@ void prepare_test_tx_buffer(sdr_global_t *sdr)
     // }
     // std::cout << std::endl;
     std::cout << "summ_vector len = " << summ_vector.size() << std::endl;
+    
     // 5. Апсемплинг и Формирующий фильтр
     int nsps = sdr->phy.Nsps;
     int syms = 5;
@@ -447,6 +434,7 @@ void calculate_test_set(sdr_global_t *sdr)
     sdr->test_set.xAxis_upsampled.resize(sdr->test_set.N * sdr->test_set.symb_size); 
     std::iota(sdr->test_set.xAxis.begin(), sdr->test_set.xAxis.end(), 0);
     std::iota(sdr->test_set.xAxis_upsampled.begin(), sdr->test_set.xAxis_upsampled.end(), 0);
+    
     // 2. Модуляция\манипуляция BPSK\QPSK\N_QAM и др
     sdr->test_set.modulated_array = modulate(sdr->test_set.bit_array, sdr->test_set.MO);
     for (int i = 0; i < (int)sdr->test_set.modulated_array.size(); i++){
