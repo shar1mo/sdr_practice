@@ -10,6 +10,8 @@
 #include <vector>
 #include <complex>
 
+#include "ofdm.h"
+
 #define BUFFER_SIZE 1920 * 2
 
 typedef struct sdr_config_s{
@@ -73,6 +75,20 @@ typedef struct test_set_s{
     std::vector<int> ted_indexes; 
 } test_set_t;
 
+typedef struct ofdm_test_s{
+    ofdm_params_t params;
+    std::vector<int> bit_array;
+    std::vector<std::complex<double>> modulated_symbols;
+    std::vector<std::complex<double>> ofdm_tx_samples;
+    std::vector<std::complex<double>> ofdm_rx_samples;
+    std::vector<std::complex<double>> fft_symbol;
+    std::vector<std::complex<double>> rx_data_symbols;
+    std::vector<int> demod_bit_array;
+    std::vector<double> carrier_map;
+    std::vector<double> fft_magnitude;
+    std::vector<std::complex<double>> ofdm_symbol_no_cp;
+} ofdm_test_t;
+
 // Инициализация
 typedef struct sdr_global_s{
     bool running;
@@ -84,11 +100,13 @@ typedef struct sdr_global_s{
     SoapySDRDevice *sdr;
     SoapySDRStream *rxStream;
     SoapySDRStream *txStream;
+    ofdm_test_t test_bpsk_ofdm;
 } sdr_global_t;
 
 // Прототипы функций
 struct SoapySDRDevice *setup_pluto_sdr(sdr_config_t *config);
 struct SoapySDRStream *setup_stream(struct SoapySDRDevice *sdr, sdr_config_t *config, bool isRx);
+void test_bpsk_ofdm_loopback(sdr_global_t *sdr);
 
 void close_pluto_sdr(sdr_global_t *sdr);
 

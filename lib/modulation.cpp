@@ -113,12 +113,12 @@ std::vector<int> demodulate(std::vector<std::complex<double>> &in, int modulatio
     return bit_array;
 }
 
-void demod_bpsk(std::vector<std::complex<double>> &in,  std::vector<int> &out)
+void demod_bpsk(std::vector<std::complex<double>> &in, std::vector<int> &out)
 {
     int val;
     for (int i = 0; i < in.size(); i++)
     {
-        if(in[i].real() >= 0 && in[i].imag() >= 0){
+        if(in[i].real() >= 0){
             val = 1;
         } else {
             val = 0;

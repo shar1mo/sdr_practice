@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
+project(shar1mo_sdr_club)
 set(CMAKE_CXX_STANDARD 20)
 
 set(THIRD_PARTY_DIR ${PROJECT_SOURCE_DIR}/thirdparty)
@@ -17,9 +18,6 @@ include_directories(${SDL2_INCLUDE_DIRS})
 # OpenGL/GLEW
 find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
-
-# FFTW3
-# find_package(FFTW3 REQUIRED)
 
 include_directories(${INCLUDE_DIR})
 include_directories(${INCLUDE_DIR}/ui)
@@ -47,6 +45,7 @@ add_library(implot STATIC
 )
 target_include_directories(implot PUBLIC ${THIRD_PARTY_DIR}/implot)
 target_link_libraries(implot PRIVATE imgui)
+
 target_compile_options(implot PRIVATE -fPIC)
 
 # Добавляем директорию lib с нашими функциями обработки сигнала
@@ -56,11 +55,7 @@ set(SOURCES ${SRC_DIR}/main.cpp
             ${SRC_DIR}/pluto_sdr_lib.cpp
             ${SRC_DIR}/ui/pluto_ui.cpp
             ${INCLUDE_LIB_DIR}/time_sync.cpp
-            ${INCLUDE_LIB_DIR}/freq_sync.cpp
-            ${INCLUDE_LIB_DIR}/bit_generation.cpp
-            ${INCLUDE_LIB_DIR}/math_operations.cpp
-            ${INCLUDE_LIB_DIR}/modulation.cpp
-            ${INCLUDE_LIB_DIR}/pulse_shaping.cpp)
+            ${INCLUDE_LIB_DIR}/freq_sync.cpp)
 
 add_executable(main ${SOURCES})
-target_link_libraries(main PRIVATE imgui implot ${SDL2_LIBRARIES} ${OPENGL_LIBRARIES} ${GLEW_LIBRARIES} ${SoapySDR_LIBRARIES} mylib fftw3)
+target_link_libraries(main PRIVATE imgui implot ${SDL2_LIBRARIES} ${OPENGL_LIBRARIES} ${GLEW_LIBRARIES} ${SoapySDR_LIBRARIES} mylib)

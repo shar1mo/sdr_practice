@@ -22,6 +22,7 @@
 #include "test_rx_samples_pam_qam4_2_barker13.h"
 #include "test_rx_samples_bpsk_barker13.h"
 #include "pluto_sdr_lib.h"
+#include "ofdm.h"
 
 struct SoapySDRDevice *setup_pluto_sdr(sdr_config_t *config)
 {
@@ -502,4 +503,76 @@ void close_pluto_sdr(sdr_global_t *sdr)
     }
 
     printf("Pluto SDR is closed. Streams are deactivated.\n");
+}
+
+void test_bpsk_ofdm_loopback(sdr_global_t *sdr)
+{
+    std::vector<int> hello_sibguti = {0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0,
+        0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1,
+        1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 1,
+        1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0,
+        0};
+
+    sdr->test_bpsk_ofdm.bit_array = hello_sibguti;
+    sdr->test_bpsk_ofdm.params = init_ofdm_params();
+
+    sdr->test_bpsk_ofdm.modulated_symbols = modulate(sdr->test_bpsk_ofdm.bit_array, 1);
+    sdr->test_bpsk_ofdm.ofdm_tx_samples = ofdm_modulate(sdr->test_bpsk_ofdm.modulated_symbols, sdr->test_bpsk_ofdm.params);
+    sdr->test_bpsk_ofdm.ofdm_rx_samples = sdr->test_bpsk_ofdm.ofdm_tx_samples;
+    sdr->test_bpsk_ofdm.rx_data_symbols = ofdm_demodulate(sdr->test_bpsk_ofdm.ofdm_rx_samples, sdr->test_bpsk_ofdm.params);
+
+    if (sdr->test_bpsk_ofdm.rx_data_symbols.size() > sdr->test_bpsk_ofdm.modulated_symbols.size()) {
+        sdr->test_bpsk_ofdm.rx_data_symbols.resize(sdr->test_bpsk_ofdm.modulated_symbols.size());
+    }
+
+    sdr->test_bpsk_ofdm.demod_bit_array = demodulate(sdr->test_bpsk_ofdm.rx_data_symbols, 1);
+
+    if (sdr->test_bpsk_ofdm.demod_bit_array.size() > sdr->test_bpsk_ofdm.bit_array.size()) {
+        sdr->test_bpsk_ofdm.demod_bit_array.resize(sdr->test_bpsk_ofdm.bit_array.size());
+    }
+
+    sdr->test_bpsk_ofdm.carrier_map.assign(sdr->test_bpsk_ofdm.params.fft_size, 0.0);
+
+    for (int i = 0; i < sdr->test_bpsk_ofdm.params.data_carriers.size(); i++)
+    {
+        sdr->test_bpsk_ofdm.carrier_map[sdr->test_bpsk_ofdm.params.data_carriers[i]] = 1.0;
+    }
+
+    for (int i = 0; i < sdr->test_bpsk_ofdm.params.pilot_carriers.size(); i++)
+    {
+        sdr->test_bpsk_ofdm.carrier_map[sdr->test_bpsk_ofdm.params.pilot_carriers[i]] = 2.0;
+    }
+
+    int sym_len = sdr->test_bpsk_ofdm.params.fft_size + sdr->test_bpsk_ofdm.params.cp_len;
+    if ((int)sdr->test_bpsk_ofdm.ofdm_rx_samples.size() >= sym_len) {
+        sdr->test_bpsk_ofdm.ofdm_symbol_no_cp.resize(sdr->test_bpsk_ofdm.params.fft_size);
+        for (int i = 0; i < sdr->test_bpsk_ofdm.params.fft_size; i++) {
+            sdr->test_bpsk_ofdm.ofdm_symbol_no_cp[i] = sdr->test_bpsk_ofdm.ofdm_rx_samples[sdr->test_bpsk_ofdm.params.cp_len + i];
+        }
+
+        sdr->test_bpsk_ofdm.fft_symbol = fft(sdr->test_bpsk_ofdm.ofdm_symbol_no_cp);
+        sdr->test_bpsk_ofdm.fft_magnitude.resize(sdr->test_bpsk_ofdm.fft_symbol.size());
+
+        for (int i = 0; i < sdr->test_bpsk_ofdm.fft_symbol.size(); i++)
+        {
+            sdr->test_bpsk_ofdm.fft_magnitude[i] = std::abs(sdr->test_bpsk_ofdm.fft_symbol[i]);
+        }
+    }
+
+    std::cout << "OFDM BPSK TX bits = " << sdr->test_bpsk_ofdm.bit_array.size() << std::endl;
+    std::cout << "OFDM BPSK RX bits = " << sdr->test_bpsk_ofdm.demod_bit_array.size() << std::endl;
+
+    int success_counter = 0;
+    int compare_size = std::min(sdr->test_bpsk_ofdm.bit_array.size(), sdr->test_bpsk_ofdm.demod_bit_array.size());
+    for (int i = 0; i < compare_size; i++)
+    {
+        if (sdr->test_bpsk_ofdm.bit_array[i] == sdr->test_bpsk_ofdm.demod_bit_array[i]) {
+            success_counter++;
+        }
+    }
+
+    if (compare_size > 0) {
+        std::cout << "OFDM BPSK Success rate = " << (success_counter * 100.0 / compare_size) << "%" << std::endl;
+    }
 }

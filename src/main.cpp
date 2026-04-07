@@ -66,6 +66,8 @@ int main(int argc, char* argv[])
     // calculate_test_set(&my_sdr);
     prepare_test_tx_buffer(&my_sdr);
     test_rx_bpsk_barker13(&my_sdr);
+
+    test_bpsk_ofdm_loopback(&my_sdr);
     
     std::thread gui_thread(run_gui, &my_sdr);
     std::thread sdr_thread(run_sdr, &my_sdr);

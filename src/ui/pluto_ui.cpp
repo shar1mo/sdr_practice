@@ -17,6 +17,7 @@
 #include "math_operations.h"
 #include "pluto_sdr_lib.h"
 #include "ui/pluto_ui.h"
+#include "ofdm.h"
 
 #include "test_rx_samples_bpsk_barker13.h"
 
@@ -141,10 +142,8 @@ void show_main_window(sdr_global_t *sdr)
     if (ImGui::BeginTabBar("Main")) {
         if (ImGui::BeginTabItem("Real Time I/Q samples")) {
             
-            // Только для RX режима показываем графики
             if (!sdr->sdr_config.is_tx) {
                 
-                // Raw Samples - Time Domain
                 if (!sdr->phy.raw_samples.empty()) {
                     if (ImPlot::BeginPlot("Raw I/Q Samples (Time Domain)", ImVec2(-1, 250))) {
                         ImPlot::SetupAxes("Sample Index", "Amplitude");
@@ -163,7 +162,6 @@ void show_main_window(sdr_global_t *sdr)
                     }
                 }
 
-                // Raw Samples - Constellation
                 if (!sdr->phy.raw_samples.empty()) {
                     if (ImPlot::BeginPlot("Raw Samples Constellation", ImVec2(-1, 250))) {
                         ImPlot::SetupAxes("I","Q");
@@ -181,7 +179,6 @@ void show_main_window(sdr_global_t *sdr)
                     }
                 }
 
-                // Matched Filter - Time Domain
                 if (!sdr->phy.matched_samples.empty()) {
                     if (ImPlot::BeginPlot("Matched Filter Output (Time Domain)", ImVec2(-1, 250))) {
                         ImPlot::SetupAxes("Sample Index", "Amplitude");
@@ -200,7 +197,6 @@ void show_main_window(sdr_global_t *sdr)
                     }
                 }
 
-                // Matched Filter - Constellation
                 if (!sdr->phy.matched_samples.empty()) {
                     if (ImPlot::BeginPlot("Matched Filter Constellation", ImVec2(-1, 250))) {
                         ImPlot::SetupAxes("I", "Q");
@@ -218,7 +214,6 @@ void show_main_window(sdr_global_t *sdr)
                     }
                 }
 
-                // Symbol Sync - Time Domain
                 if (!sdr->phy.symb_sync_samples.empty()) {
                     if (ImPlot::BeginPlot("Symbol Sync Output (Time Domain)", ImVec2(-1, 250))) {
                         ImPlot::SetupAxes("Sample Index", "Amplitude");
@@ -236,7 +231,6 @@ void show_main_window(sdr_global_t *sdr)
                     }
                 }
 
-                // Symbol Sync - Constellation
                 if (!sdr->phy.symb_sync_samples.empty()) {
                     if (ImPlot::BeginPlot("Symbol Sync Constellation", ImVec2(-1, 250))) {
                         ImPlot::SetupAxes("I", "Q");
@@ -254,7 +248,6 @@ void show_main_window(sdr_global_t *sdr)
                     }
                 }
 
-                // Costas Loop - Time Domain
                 if (!sdr->phy.costas_sync_samples.empty()) {
                     if (ImPlot::BeginPlot("Costas Loop Output (Time Domain)", ImVec2(-1, 250))) {
                         ImPlot::SetupAxes("Sample Index", "Amplitude");
@@ -272,7 +265,6 @@ void show_main_window(sdr_global_t *sdr)
                     }
                 }
 
-                // Costas Loop - Constellation
                 if (!sdr->phy.costas_sync_samples.empty()) {
                     if (ImPlot::BeginPlot("Costas Loop Constellation", ImVec2(-1, 250))) {
                         ImPlot::SetupAxes("I", "Q");
@@ -305,6 +297,23 @@ void show_main_window(sdr_global_t *sdr)
             test_header("Demodulation", test_rx_from_sdr_barker_demodulation, sdr, sdr->test_bpsk_barker13);
             ImGui::EndTabItem();
         }
+
+        if (ImGui::BeginTabItem("Test: BPSK OFDM")) {
+            if (ImGui::TreeNodeEx("TX")) {
+                test_bpsk_ofdm_tx(sdr);
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNodeEx("RX")) {
+                test_bpsk_ofdm_rx(sdr);
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNodeEx("Demodulation")) {
+                test_bpsk_ofdm_demod(sdr);
+                ImGui::TreePop();
+            }
+            ImGui::EndTabItem();
+        }
+
         ImGui::EndTabBar();
     }
     ImGui::End();
@@ -873,5 +882,189 @@ void show_test_sdr_set(sdr_global_t *sdr)
         }
 
         ImPlot::EndSubplots();
+    }
+}
+
+void test_bpsk_ofdm_tx(sdr_global_t *sdr)
+{
+    static int rows = 5;
+    static int cols = 1;
+    static float rratios[] = {5, 5, 5, 5, 5};
+    static float cratios[] = {5, 5, 5, 5, 5};
+
+    ImVec2 win_size = ImGui::GetWindowSize();
+    win_size.y -= 50;
+    win_size.x -= 50;
+    static ImPlotSubplotFlags flags = ImPlotSubplotFlags_None;
+
+    if (ImPlot::BeginSubplots("OFDM TX", rows, cols, win_size, flags, rratios, cratios)) {
+
+        if (ImPlot::BeginPlot("BPSK Symbols")) {
+            ImPlot::SetupLegend(ImPlotLocation_NorthWest, ImPlotLegendFlags_Reverse);
+            std::vector<double> i_vals, q_vals;
+            i_vals.reserve(sdr->test_bpsk_ofdm.modulated_symbols.size());
+            q_vals.reserve(sdr->test_bpsk_ofdm.modulated_symbols.size());
+            for (size_t i = 0; i < sdr->test_bpsk_ofdm.modulated_symbols.size(); i++) {
+                i_vals.push_back(sdr->test_bpsk_ofdm.modulated_symbols[i].real());
+                q_vals.push_back(sdr->test_bpsk_ofdm.modulated_symbols[i].imag());
+            }
+            ImPlot::PlotLine("I", i_vals.data(), i_vals.size());
+            ImPlot::PlotLine("Q", q_vals.data(), q_vals.size());
+            ImPlot::EndPlot();
+        }
+
+        if (ImPlot::BeginPlot("BPSK Symbols Constellation")) {
+            std::vector<double> i_vals2, q_vals2;
+            i_vals2.reserve(sdr->test_bpsk_ofdm.modulated_symbols.size());
+            q_vals2.reserve(sdr->test_bpsk_ofdm.modulated_symbols.size());
+            for (size_t i = 0; i < sdr->test_bpsk_ofdm.modulated_symbols.size(); i++) {
+                i_vals2.push_back(sdr->test_bpsk_ofdm.modulated_symbols[i].real());
+                q_vals2.push_back(sdr->test_bpsk_ofdm.modulated_symbols[i].imag());
+            }
+            ImPlot::PlotScatter("I/Q", i_vals2.data(), q_vals2.data(), i_vals2.size());
+            ImPlot::EndPlot();
+        }
+
+        if (ImPlot::BeginPlot("Carrier Map")) {
+            ImPlot::SetupAxes("Subcarrier Index", "Type");
+            ImPlot::SetupAxisLimits(ImAxis_Y1, -0.2, 2.2, ImGuiCond_Always);
+            ImPlot::PlotStems("Carrier Type", sdr->test_bpsk_ofdm.carrier_map.data(), sdr->test_bpsk_ofdm.carrier_map.size());
+            ImPlot::EndPlot();
+        }
+
+        if (ImPlot::BeginPlot("OFDM TX Samples")) {
+            ImPlot::SetupLegend(ImPlotLocation_NorthWest, ImPlotLegendFlags_Reverse);
+            std::vector<double> i_vals3, q_vals3;
+            i_vals3.reserve(sdr->test_bpsk_ofdm.ofdm_tx_samples.size());
+            q_vals3.reserve(sdr->test_bpsk_ofdm.ofdm_tx_samples.size());
+            for (size_t i = 0; i < sdr->test_bpsk_ofdm.ofdm_tx_samples.size(); i++) {
+                i_vals3.push_back(sdr->test_bpsk_ofdm.ofdm_tx_samples[i].real());
+                q_vals3.push_back(sdr->test_bpsk_ofdm.ofdm_tx_samples[i].imag());
+            }
+            ImPlot::PlotLine("I", i_vals3.data(), i_vals3.size());
+            ImPlot::PlotLine("Q", q_vals3.data(), q_vals3.size());
+            ImPlot::EndPlot();
+        }
+
+        if (ImPlot::BeginPlot("OFDM Symbol Without CP")) {
+            ImPlot::SetupLegend(ImPlotLocation_NorthWest, ImPlotLegendFlags_Reverse);
+            std::vector<double> i_vals4, q_vals4;
+            i_vals4.reserve(sdr->test_bpsk_ofdm.ofdm_symbol_no_cp.size());
+            q_vals4.reserve(sdr->test_bpsk_ofdm.ofdm_symbol_no_cp.size());
+            for (size_t i = 0; i < sdr->test_bpsk_ofdm.ofdm_symbol_no_cp.size(); i++) {
+                i_vals4.push_back(sdr->test_bpsk_ofdm.ofdm_symbol_no_cp[i].real());
+                q_vals4.push_back(sdr->test_bpsk_ofdm.ofdm_symbol_no_cp[i].imag());
+            }
+            ImPlot::PlotLine("I", i_vals4.data(), i_vals4.size());
+            ImPlot::PlotLine("Q", q_vals4.data(), q_vals4.size());
+            ImPlot::EndPlot();
+        }
+
+        ImPlot::EndSubplots();
+    }
+}
+
+void test_bpsk_ofdm_rx(sdr_global_t *sdr)
+{
+    static int rows = 4;
+    static int cols = 1;
+    static float rratios[] = {5, 5, 5, 5};
+    static float cratios[] = {5, 5, 5, 5};
+
+    ImVec2 win_size = ImGui::GetWindowSize();
+    win_size.y -= 50;
+    win_size.x -= 50;
+    static ImPlotSubplotFlags flags = ImPlotSubplotFlags_None;
+
+    if (ImPlot::BeginSubplots("OFDM RX", rows, cols, win_size, flags, rratios, cratios)) {
+
+        if (ImPlot::BeginPlot("OFDM RX Samples")) {
+            ImPlot::SetupLegend(ImPlotLocation_NorthWest, ImPlotLegendFlags_Reverse);
+            std::vector<double> i_vals, q_vals;
+            i_vals.reserve(sdr->test_bpsk_ofdm.ofdm_rx_samples.size());
+            q_vals.reserve(sdr->test_bpsk_ofdm.ofdm_rx_samples.size());
+            for (size_t i = 0; i < sdr->test_bpsk_ofdm.ofdm_rx_samples.size(); i++) {
+                i_vals.push_back(sdr->test_bpsk_ofdm.ofdm_rx_samples[i].real());
+                q_vals.push_back(sdr->test_bpsk_ofdm.ofdm_rx_samples[i].imag());
+            }
+            ImPlot::PlotLine("I", i_vals.data(), i_vals.size());
+            ImPlot::PlotLine("Q", q_vals.data(), q_vals.size());
+            ImPlot::EndPlot();
+        }
+
+        if (ImPlot::BeginPlot("FFT Symbol")) {
+            ImPlot::SetupLegend(ImPlotLocation_NorthWest, ImPlotLegendFlags_Reverse);
+            std::vector<double> i_vals2, q_vals2;
+            i_vals2.reserve(sdr->test_bpsk_ofdm.fft_symbol.size());
+            q_vals2.reserve(sdr->test_bpsk_ofdm.fft_symbol.size());
+            for (size_t i = 0; i < sdr->test_bpsk_ofdm.fft_symbol.size(); i++) {
+                i_vals2.push_back(sdr->test_bpsk_ofdm.fft_symbol[i].real());
+                q_vals2.push_back(sdr->test_bpsk_ofdm.fft_symbol[i].imag());
+            }
+            ImPlot::PlotLine("I", i_vals2.data(), i_vals2.size());
+            ImPlot::PlotLine("Q", q_vals2.data(), q_vals2.size());
+            ImPlot::EndPlot();
+        }
+
+        if (ImPlot::BeginPlot("Magnitude FFT Symbol")) {
+            ImPlot::SetupAxes("Subcarrier Index", "Magnitude");
+            ImPlot::PlotLine("Abs(FFT)", sdr->test_bpsk_ofdm.fft_magnitude.data(), sdr->test_bpsk_ofdm.fft_magnitude.size());
+            ImPlot::EndPlot();
+        }
+
+        if (ImPlot::BeginPlot("Recovered Data Symbols")) {
+            std::vector<double> i_vals3, q_vals3;
+            i_vals3.reserve(sdr->test_bpsk_ofdm.rx_data_symbols.size());
+            q_vals3.reserve(sdr->test_bpsk_ofdm.rx_data_symbols.size());
+            for (size_t i = 0; i < sdr->test_bpsk_ofdm.rx_data_symbols.size(); i++) {
+                i_vals3.push_back(sdr->test_bpsk_ofdm.rx_data_symbols[i].real());
+                q_vals3.push_back(sdr->test_bpsk_ofdm.rx_data_symbols[i].imag());
+            }
+            ImPlot::PlotScatter("I/Q", i_vals3.data(), q_vals3.data(), i_vals3.size());
+            ImPlot::EndPlot();
+        }
+
+        ImPlot::EndSubplots();
+    }
+}
+
+void test_bpsk_ofdm_demod(sdr_global_t *sdr)
+{
+    ImGui::Text("TX bits: ");
+    for (size_t i = 0; i < sdr->test_bpsk_ofdm.bit_array.size(); i++) {
+        ImGui::Text("%d", sdr->test_bpsk_ofdm.bit_array[i]);
+        ImGui::SameLine();
+    }
+
+    ImGui::NewLine();
+    ImGui::NewLine();
+
+    ImGui::Text("RX bits: ");
+    for (size_t i = 0; i < sdr->test_bpsk_ofdm.demod_bit_array.size(); i++) {
+        ImGui::Text("%d", sdr->test_bpsk_ofdm.demod_bit_array[i]);
+        ImGui::SameLine();
+    }
+
+    ImGui::NewLine();
+    ImGui::Separator();
+    ImGui::Text("Info:");
+    ImGui::Text("Null: 12(6-6)");
+    ImGui::Text("FFT size: %d", sdr->test_bpsk_ofdm.params.fft_size);
+    ImGui::Text("CP len: %d", sdr->test_bpsk_ofdm.params.cp_len);
+    ImGui::Text("TX samples: %zu", sdr->test_bpsk_ofdm.ofdm_tx_samples.size());
+    ImGui::Text("Data carriers: %zu", sdr->test_bpsk_ofdm.params.data_carriers.size());
+    ImGui::Text("Pilot carriers: %zu", sdr->test_bpsk_ofdm.params.pilot_carriers.size());
+
+    int success_counter = 0;
+    int compare_size = std::min(sdr->test_bpsk_ofdm.bit_array.size(), sdr->test_bpsk_ofdm.demod_bit_array.size());
+    for (int i = 0; i < compare_size; i++)
+    {
+        if (sdr->test_bpsk_ofdm.bit_array[i] == sdr->test_bpsk_ofdm.demod_bit_array[i]) {
+            success_counter++;
+        }
+    }
+
+    if (compare_size > 0) {
+        ImGui::Text("Success rate: %.2f%%", success_counter * 100.0f / compare_size);
     }
 }
