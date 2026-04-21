@@ -87,6 +87,10 @@ typedef struct ofdm_test_s{
     std::vector<double> carrier_map;
     std::vector<double> fft_magnitude;
     std::vector<std::complex<double>> ofdm_symbol_no_cp;
+
+    int detected_symbol_start = 0;
+    int detected_symbols_in_buffer = 0;
+    double detected_cp_metric = 0.0;
 } ofdm_test_t;
 
 // Инициализация
@@ -101,12 +105,15 @@ typedef struct sdr_global_s{
     SoapySDRStream *rxStream;
     SoapySDRStream *txStream;
     ofdm_test_t test_bpsk_ofdm;
+    bool use_ofdm = false;
 } sdr_global_t;
 
 // Прототипы функций
 struct SoapySDRDevice *setup_pluto_sdr(sdr_config_t *config);
 struct SoapySDRStream *setup_stream(struct SoapySDRDevice *sdr, sdr_config_t *config, bool isRx);
 void test_bpsk_ofdm_loopback(sdr_global_t *sdr);
+void prepare_test_tx_buffer_ofdm(sdr_global_t *sdr);
+void process_rx_ofdm_realtime(sdr_global_t *sdr);
 
 void close_pluto_sdr(sdr_global_t *sdr);
 

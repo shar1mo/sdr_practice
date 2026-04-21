@@ -157,60 +157,275 @@ void fill_test_tx_buffer(int16_t *buffer, int size)
     }
 }
 
+static int find_ofdm_symbol_start(
+    const std::vector<std::complex<double>> &samples,
+    ofdm_params_t &params,
+    double &best_metric
+)
+{
+    int sym_len = params.fft_size + params.cp_len;
+    if ((int)samples.size() < sym_len) {
+        best_metric = 0.0;
+        return 0;
+    }
+
+    best_metric = 0.0;
+    int best_index = 0;
+
+    for (int n = 0; n <= (int)samples.size() - sym_len; n++)
+    {
+        std::complex<double> corr = 0.0;
+        double p1 = 0.0;
+        double p2 = 0.0;
+
+        for (int i = 0; i < params.cp_len; i++)
+        {
+            const auto &a = samples[n + i];
+            const auto &b = samples[n + params.fft_size + i];
+            corr += a * std::conj(b);
+            p1 += std::norm(a);
+            p2 += std::norm(b);
+        }
+
+        double denom = std::sqrt(p1 * p2) + 1e-12;
+        double metric = std::abs(corr) / denom;
+
+        if (metric > best_metric)
+        {
+            best_metric = metric;
+            best_index = n;
+        }
+    }
+
+    return best_index;
+}
+
+void prepare_test_tx_buffer_ofdm(sdr_global_t *sdr)
+{
+    std::vector<int> hello_sibguti = {
+        0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0,
+        0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1,
+        1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 1,
+        1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0,
+        0
+    };
+
+    sdr->test_bpsk_ofdm.params = init_ofdm_params();
+
+    int payload_bits = std::min(
+        (int)hello_sibguti.size(),
+        (int)sdr->test_bpsk_ofdm.params.data_carriers.size()
+    );
+
+    sdr->test_bpsk_ofdm.bit_array.assign(
+        hello_sibguti.begin(),
+        hello_sibguti.begin() + payload_bits
+    );
+
+    sdr->test_bpsk_ofdm.modulated_symbols = modulate(sdr->test_bpsk_ofdm.bit_array, 1);
+    sdr->test_bpsk_ofdm.ofdm_tx_samples = ofdm_modulate(
+        sdr->test_bpsk_ofdm.modulated_symbols,
+        sdr->test_bpsk_ofdm.params
+    );
+
+    sdr->test_bpsk_ofdm.carrier_map.assign(sdr->test_bpsk_ofdm.params.fft_size, 0.0);
+    for (int i = 0; i < (int)sdr->test_bpsk_ofdm.params.data_carriers.size(); i++) {
+        sdr->test_bpsk_ofdm.carrier_map[sdr->test_bpsk_ofdm.params.data_carriers[i]] = 1.0;
+    }
+    for (int i = 0; i < (int)sdr->test_bpsk_ofdm.params.pilot_carriers.size(); i++) {
+        sdr->test_bpsk_ofdm.carrier_map[sdr->test_bpsk_ofdm.params.pilot_carriers[i]] = 2.0;
+    }
+
+    int sym_len = sdr->test_bpsk_ofdm.params.fft_size + sdr->test_bpsk_ofdm.params.cp_len;
+    if ((int)sdr->test_bpsk_ofdm.ofdm_tx_samples.size() >= sym_len) {
+        sdr->test_bpsk_ofdm.ofdm_symbol_no_cp.resize(sdr->test_bpsk_ofdm.params.fft_size);
+        for (int i = 0; i < sdr->test_bpsk_ofdm.params.fft_size; i++) {
+            sdr->test_bpsk_ofdm.ofdm_symbol_no_cp[i] =
+                sdr->test_bpsk_ofdm.ofdm_tx_samples[sdr->test_bpsk_ofdm.params.cp_len + i];
+        }
+
+        sdr->test_bpsk_ofdm.fft_symbol = fft(sdr->test_bpsk_ofdm.ofdm_symbol_no_cp);
+        sdr->test_bpsk_ofdm.fft_magnitude.resize(sdr->test_bpsk_ofdm.fft_symbol.size());
+        for (int i = 0; i < (int)sdr->test_bpsk_ofdm.fft_symbol.size(); i++) {
+            sdr->test_bpsk_ofdm.fft_magnitude[i] = std::abs(sdr->test_bpsk_ofdm.fft_symbol[i]);
+        }
+    }
+
+    int k = 0;
+    for (int i = 13; i < 2 * sdr->sdr_config.buffer_size; i += 2)
+    {
+        auto val = sdr->test_bpsk_ofdm.ofdm_tx_samples[
+            k % sdr->test_bpsk_ofdm.ofdm_tx_samples.size()
+        ];
+
+        sdr->phy.pluto_tx_buffer[i]     = int(val.real() * 2000.0) << 4;
+        sdr->phy.pluto_tx_buffer[i + 1] = int(val.imag() * 2000.0) << 4;
+        k++;
+    }
+
+    for(size_t i = 0; i < 2; i++)
+    {
+        sdr->phy.pluto_tx_buffer[0 + i] = 0xffff;
+        sdr->phy.pluto_tx_buffer[10 + i] = 0xffff;
+    }
+}
+
+void process_rx_ofdm_realtime(sdr_global_t *sdr)
+{
+    sdr->test_bpsk_ofdm.ofdm_rx_samples = sdr->phy.raw_samples;
+
+    if (sdr->test_bpsk_ofdm.params.fft_size == 0) {
+        sdr->test_bpsk_ofdm.params = init_ofdm_params();
+    }
+
+    int sym_len = sdr->test_bpsk_ofdm.params.fft_size + sdr->test_bpsk_ofdm.params.cp_len;
+    if ((int)sdr->phy.raw_samples.size() < sym_len) {
+        return;
+    }
+
+    double best_metric = 0.0;
+    int start = find_ofdm_symbol_start(sdr->phy.raw_samples, sdr->test_bpsk_ofdm.params, best_metric);
+
+    sdr->test_bpsk_ofdm.detected_symbol_start = start;
+    sdr->test_bpsk_ofdm.detected_cp_metric = best_metric;
+    sdr->test_bpsk_ofdm.detected_symbols_in_buffer =
+        ((int)sdr->phy.raw_samples.size() - start) / sym_len;
+
+    if (sdr->test_bpsk_ofdm.detected_symbols_in_buffer <= 0) {
+        return;
+    }
+
+    sdr->test_bpsk_ofdm.rx_data_symbols.clear();
+
+    for (int s = 0; s < sdr->test_bpsk_ofdm.detected_symbols_in_buffer; s++)
+    {
+        int base = start + s * sym_len;
+        if (base + sym_len > (int)sdr->phy.raw_samples.size()) {
+            break;
+        }
+
+        std::vector<std::complex<double>> symbol_no_cp(sdr->test_bpsk_ofdm.params.fft_size);
+        for (int i = 0; i < sdr->test_bpsk_ofdm.params.fft_size; i++) {
+            symbol_no_cp[i] = sdr->phy.raw_samples[base + sdr->test_bpsk_ofdm.params.cp_len + i];
+        }
+
+        std::vector<std::complex<double>> freq = fft(symbol_no_cp);
+
+        std::complex<double> pilot_sum = 0.0;
+        for (int i = 0; i < (int)sdr->test_bpsk_ofdm.params.pilot_carriers.size(); i++) {
+            pilot_sum += freq[sdr->test_bpsk_ofdm.params.pilot_carriers[i]];
+        }
+
+        if (std::abs(pilot_sum) > 1e-12) {
+            double phase = std::arg(pilot_sum);
+            std::complex<double> rot = std::exp(std::complex<double>(0.0, -phase));
+            for (int i = 0; i < (int)freq.size(); i++) {
+                freq[i] *= rot;
+            }
+        }
+
+        if (s == 0) {
+            sdr->test_bpsk_ofdm.ofdm_symbol_no_cp = symbol_no_cp;
+            sdr->test_bpsk_ofdm.fft_symbol = freq;
+            sdr->test_bpsk_ofdm.fft_magnitude.resize(freq.size());
+            for (int i = 0; i < (int)freq.size(); i++) {
+                sdr->test_bpsk_ofdm.fft_magnitude[i] = std::abs(freq[i]);
+            }
+        }
+
+        for (int i = 0; i < (int)sdr->test_bpsk_ofdm.params.data_carriers.size(); i++) {
+            sdr->test_bpsk_ofdm.rx_data_symbols.push_back(
+                freq[sdr->test_bpsk_ofdm.params.data_carriers[i]]
+            );
+        }
+    }
+
+    sdr->test_bpsk_ofdm.demod_bit_array = demodulate(sdr->test_bpsk_ofdm.rx_data_symbols, 1);
+
+    if (sdr->test_bpsk_ofdm.demod_bit_array.size() > sdr->test_bpsk_ofdm.bit_array.size()) {
+        sdr->test_bpsk_ofdm.demod_bit_array.resize(sdr->test_bpsk_ofdm.bit_array.size());
+    }
+}
+
 void run_sdr(sdr_global_t *sdr)
 {
     if (sdr->sdr)
     {
         const long timeoutUs = 400000;
         long long last_time = 0;
-        
+
         int buffers_read = 0;
+
         while (sdr->running)
         {
             void *rx_buffs[] = {sdr->phy.pluto_rx_buffer};
-            int flags;
-            long long timeNs;
+            int flags = 0;
+            long long timeNs = 0;
 
-            int sr = SoapySDRDevice_readStream(sdr->sdr, sdr->rxStream, rx_buffs, sdr->sdr_config.buffer_size, &flags, &timeNs, timeoutUs);
+            int sr = SoapySDRDevice_readStream(
+                sdr->sdr,
+                sdr->rxStream,
+                rx_buffs,
+                sdr->sdr_config.buffer_size,
+                &flags,
+                &timeNs,
+                timeoutUs
+            );
+
             if (sr < 0)
             {
                 printf("ERROR. SoapySDRDevice_readStream.\n");
                 continue;
             }
-            
-            if(!sdr->sdr_config.is_tx){
+
+            if (!sdr->sdr_config.is_tx)
+            {
                 // Конвертируем сырые данные в комплексные сэмплы
-                for (int i = 0; i < BUFFER_SIZE; i++){
+                for (int i = 0; i < BUFFER_SIZE; i++)
+                {
                     sdr->phy.raw_samples[i] = std::complex<double>(
-                        sdr->phy.pluto_rx_buffer[i * 2] / 2048.0, 
+                        sdr->phy.pluto_rx_buffer[i * 2] / 2048.0,
                         sdr->phy.pluto_rx_buffer[i * 2 + 1] / 2048.0
                     );
                 }
-                
-                // 1. Согласованный фильтр (Matched Filter)
-                // Создаем SRRC фильтр
-                int nsps = sdr->phy.Nsps;
-                int syms = 5;
-                double beta = 0.75;
-                std::vector<double> filter = srrc(syms, beta, nsps, 0.0f);
-                
-                // Применяем согласованный фильтр к сырым сэмплам
-                sdr->phy.matched_samples = convolve(sdr->phy.raw_samples, filter);
-                
-                // 2. Символьная синхронизация (Symbol Sync)
-                // Используем Mueller-Muller clock recovery для BPSK
-                sdr->phy.symb_sync_samples = clock_recovery_mueller_muller(sdr->phy.matched_samples, nsps);
-                
-                // 3. Частотная синхронизация (Costas Loop) для BPSK
-                sdr->phy.costas_sync_samples = costas_loop_bpsk(sdr->phy.symb_sync_samples);
-                
-                // Для отладки - выводим размеры массивов
-                static int debug_counter = 0;
-                if (debug_counter++ % 100 == 0) {
-                    std::cout << "Raw: " << sdr->phy.raw_samples.size() 
-                              << " Matched: " << sdr->phy.matched_samples.size()
-                              << " SymbSync: " << sdr->phy.symb_sync_samples.size()
-                              << " Costas: " << sdr->phy.costas_sync_samples.size() << std::endl;
+
+                // Режимы обработки разделены:
+                // use_ofdm == false -> старый BPSK pipeline
+                // use_ofdm == true  -> отдельный OFDM pipeline
+                if (sdr->use_ofdm)
+                {
+                    process_rx_ofdm_realtime(sdr);
+                }
+                else
+                {
+                    // 1. Согласованный фильтр (Matched Filter)
+                    int nsps = sdr->phy.Nsps;
+                    int syms = 5;
+                    double beta = 0.75;
+                    std::vector<double> filter = srrc(syms, beta, nsps, 0.0f);
+
+                    sdr->phy.matched_samples = convolve(sdr->phy.raw_samples, filter);
+
+                    // 2. Символьная синхронизация (Symbol Sync)
+                    sdr->phy.symb_sync_samples =
+                        clock_recovery_mueller_muller(sdr->phy.matched_samples, nsps);
+
+                    // 3. Частотная синхронизация (Costas Loop)
+                    sdr->phy.costas_sync_samples =
+                        costas_loop_bpsk(sdr->phy.symb_sync_samples);
+
+                    // Для отладки
+                    static int debug_counter_bpsk = 0;
+                    if (debug_counter_bpsk++ % 100 == 0)
+                    {
+                        std::cout
+                            << "BPSK | Raw: " << sdr->phy.raw_samples.size()
+                            << " Matched: " << sdr->phy.matched_samples.size()
+                            << " SymbSync: " << sdr->phy.symb_sync_samples.size()
+                            << " Costas: " << sdr->phy.costas_sync_samples.size()
+                            << std::endl;
+                    }
                 }
             }
 
@@ -218,29 +433,43 @@ void run_sdr(sdr_global_t *sdr)
             last_time = timeNs;
 
             // Переменная для времени отправки сэмплов относительно текущего приема
-            long long tx_time = timeNs + (4 * 1000 * 1000); // на 4 [мс] в будущее
+            long long tx_time = timeNs + (4 * 1000 * 1000); // на 4 мс в будущее
 
             void *tx_buffs[] = {sdr->phy.pluto_tx_buffer};
+
             // Добавляем время, когда нужно передать блок tx_buffer
-            for(size_t i = 0; i < 8; i++)
+            for (size_t i = 0; i < 8; i++)
             {
                 uint8_t tx_time_byte = (tx_time >> (i * 8)) & 0xff;
                 sdr->phy.pluto_tx_buffer[2 + i] = tx_time_byte << 4;
             }
-            
-            if(sdr->sdr_config.is_tx == true){
-                if( (buffers_read % 2 == 0) ){
+
+            if (sdr->sdr_config.is_tx == true)
+            {
+                if ((buffers_read % 2) == 0)
+                {
                     flags = SOAPY_SDR_HAS_TIME;
-                    int st = SoapySDRDevice_writeStream(sdr->sdr, sdr->txStream, (const void * const*)tx_buffs, 
-                                                        sdr->sdr_config.buffer_size, &flags, tx_time, timeoutUs);
+
+                    int st = SoapySDRDevice_writeStream(
+                        sdr->sdr,
+                        sdr->txStream,
+                        (const void * const *)tx_buffs,
+                        sdr->sdr_config.buffer_size,
+                        &flags,
+                        tx_time,
+                        timeoutUs
+                    );
+
                     if (st != sdr->sdr_config.buffer_size)
                     {
                         printf("TX Failed: %i\n", st);
                     }
                 }
+
                 buffers_read++;
             }
         }
+
         close_pluto_sdr(sdr);
     }
 }

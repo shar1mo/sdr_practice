@@ -32,5 +32,6 @@ void show_test_sdr_set(sdr_global_t *sdr);
 void test_bpsk_ofdm_tx(sdr_global_t *sdr);
 void test_bpsk_ofdm_rx(sdr_global_t *sdr);
 void test_bpsk_ofdm_demod(sdr_global_t *sdr);
+void show_realtime_ofdm_window(sdr_global_t *sdr);
 
 #endif // PLUTO_UI_H
