@@ -157,6 +157,79 @@ void fill_test_tx_buffer(int16_t *buffer, int size)
     }
 }
 
+void prepare_test_tx_buffer_ofdm(sdr_global_t *sdr)
+{
+    std::vector<int> hello_sibguti = {
+        0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0,
+        0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1,
+        1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 1,
+        1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0,
+        0
+    };
+
+    sdr->test_bpsk_ofdm.params = init_ofdm_params();
+
+    sdr->test_bpsk_ofdm.bit_array = hello_sibguti;
+    sdr->test_bpsk_ofdm.modulated_symbols = modulate(sdr->test_bpsk_ofdm.bit_array, 1);
+    sdr->test_bpsk_ofdm.ofdm_tx_samples = ofdm_modulate(
+        sdr->test_bpsk_ofdm.modulated_symbols,
+        sdr->test_bpsk_ofdm.params
+    );
+
+    sdr->test_bpsk_ofdm.carrier_map.assign(sdr->test_bpsk_ofdm.params.fft_size, 0.0);
+    for (int i = 0; i < (int)sdr->test_bpsk_ofdm.params.data_carriers.size(); i++) {
+        sdr->test_bpsk_ofdm.carrier_map[sdr->test_bpsk_ofdm.params.data_carriers[i]] = 1.0;
+    }
+    for (int i = 0; i < (int)sdr->test_bpsk_ofdm.params.pilot_carriers.size(); i++) {
+        sdr->test_bpsk_ofdm.carrier_map[sdr->test_bpsk_ofdm.params.pilot_carriers[i]] = 2.0;
+    }
+
+    int sym_len = sdr->test_bpsk_ofdm.params.fft_size + sdr->test_bpsk_ofdm.params.cp_len;
+    if ((int)sdr->test_bpsk_ofdm.ofdm_tx_samples.size() >= sym_len) {
+        sdr->test_bpsk_ofdm.ofdm_symbol_no_cp.resize(sdr->test_bpsk_ofdm.params.fft_size);
+        for (int i = 0; i < sdr->test_bpsk_ofdm.params.fft_size; i++) {
+            sdr->test_bpsk_ofdm.ofdm_symbol_no_cp[i] =
+                sdr->test_bpsk_ofdm.ofdm_tx_samples[sdr->test_bpsk_ofdm.params.cp_len + i];
+        }
+
+        sdr->test_bpsk_ofdm.fft_symbol = fft(sdr->test_bpsk_ofdm.ofdm_symbol_no_cp);
+        sdr->test_bpsk_ofdm.fft_magnitude.resize(sdr->test_bpsk_ofdm.fft_symbol.size());
+        for (int i = 0; i < (int)sdr->test_bpsk_ofdm.fft_symbol.size(); i++) {
+            sdr->test_bpsk_ofdm.fft_magnitude[i] = std::abs(sdr->test_bpsk_ofdm.fft_symbol[i]);
+        }
+    }
+
+    // Header занимает 12 int16 слов:
+    // [0..1] = FFFF FFFF
+    // [2..9] = timestamp
+    // [10..11] = FFFF FFFF
+    // payload должен начинаться с 12, а не с 13
+    int payload_start = 12;
+    int k = 0;
+
+    for (int i = payload_start; i < 2 * sdr->sdr_config.buffer_size; i += 2)
+    {
+        auto val = sdr->test_bpsk_ofdm.ofdm_tx_samples[
+            k % sdr->test_bpsk_ofdm.ofdm_tx_samples.size()
+        ];
+
+        sdr->phy.pluto_tx_buffer[i]     = int(val.real() * 2000.0) << 4;
+        sdr->phy.pluto_tx_buffer[i + 1] = int(val.imag() * 2000.0) << 4;
+        k++;
+    }
+
+    for (size_t i = 0; i < 2; i++)
+    {
+        sdr->phy.pluto_tx_buffer[0 + i]  = 0xffff;
+        sdr->phy.pluto_tx_buffer[10 + i] = 0xffff;
+    }
+
+    std::cout << "OFDM TX payload bits = " << sdr->test_bpsk_ofdm.bit_array.size() << std::endl;
+    std::cout << "OFDM TX symbols = " << sdr->test_bpsk_ofdm.modulated_symbols.size() << std::endl;
+    std::cout << "OFDM TX samples = " << sdr->test_bpsk_ofdm.ofdm_tx_samples.size() << std::endl;
+}
+
 static int find_ofdm_symbol_start(
     const std::vector<std::complex<double>> &samples,
     ofdm_params_t &params,
@@ -200,75 +273,44 @@ static int find_ofdm_symbol_start(
     return best_index;
 }
 
-void prepare_test_tx_buffer_ofdm(sdr_global_t *sdr)
+static double estimate_cfo_from_cp(
+    const std::vector<std::complex<double>> &samples,
+    int start,
+    const ofdm_params_t &params
+)
 {
-    std::vector<int> hello_sibguti = {
-        0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1,
-        1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0,
-        0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1,
-        1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 1,
-        1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0,
-        0
-    };
+    std::complex<double> corr = 0.0;
 
-    sdr->test_bpsk_ofdm.params = init_ofdm_params();
-
-    int payload_bits = std::min(
-        (int)hello_sibguti.size(),
-        (int)sdr->test_bpsk_ofdm.params.data_carriers.size()
-    );
-
-    sdr->test_bpsk_ofdm.bit_array.assign(
-        hello_sibguti.begin(),
-        hello_sibguti.begin() + payload_bits
-    );
-
-    sdr->test_bpsk_ofdm.modulated_symbols = modulate(sdr->test_bpsk_ofdm.bit_array, 1);
-    sdr->test_bpsk_ofdm.ofdm_tx_samples = ofdm_modulate(
-        sdr->test_bpsk_ofdm.modulated_symbols,
-        sdr->test_bpsk_ofdm.params
-    );
-
-    sdr->test_bpsk_ofdm.carrier_map.assign(sdr->test_bpsk_ofdm.params.fft_size, 0.0);
-    for (int i = 0; i < (int)sdr->test_bpsk_ofdm.params.data_carriers.size(); i++) {
-        sdr->test_bpsk_ofdm.carrier_map[sdr->test_bpsk_ofdm.params.data_carriers[i]] = 1.0;
-    }
-    for (int i = 0; i < (int)sdr->test_bpsk_ofdm.params.pilot_carriers.size(); i++) {
-        sdr->test_bpsk_ofdm.carrier_map[sdr->test_bpsk_ofdm.params.pilot_carriers[i]] = 2.0;
-    }
-
-    int sym_len = sdr->test_bpsk_ofdm.params.fft_size + sdr->test_bpsk_ofdm.params.cp_len;
-    if ((int)sdr->test_bpsk_ofdm.ofdm_tx_samples.size() >= sym_len) {
-        sdr->test_bpsk_ofdm.ofdm_symbol_no_cp.resize(sdr->test_bpsk_ofdm.params.fft_size);
-        for (int i = 0; i < sdr->test_bpsk_ofdm.params.fft_size; i++) {
-            sdr->test_bpsk_ofdm.ofdm_symbol_no_cp[i] =
-                sdr->test_bpsk_ofdm.ofdm_tx_samples[sdr->test_bpsk_ofdm.params.cp_len + i];
-        }
-
-        sdr->test_bpsk_ofdm.fft_symbol = fft(sdr->test_bpsk_ofdm.ofdm_symbol_no_cp);
-        sdr->test_bpsk_ofdm.fft_magnitude.resize(sdr->test_bpsk_ofdm.fft_symbol.size());
-        for (int i = 0; i < (int)sdr->test_bpsk_ofdm.fft_symbol.size(); i++) {
-            sdr->test_bpsk_ofdm.fft_magnitude[i] = std::abs(sdr->test_bpsk_ofdm.fft_symbol[i]);
-        }
-    }
-
-    int k = 0;
-    for (int i = 13; i < 2 * sdr->sdr_config.buffer_size; i += 2)
+    for (int i = 0; i < params.cp_len; i++)
     {
-        auto val = sdr->test_bpsk_ofdm.ofdm_tx_samples[
-            k % sdr->test_bpsk_ofdm.ofdm_tx_samples.size()
-        ];
-
-        sdr->phy.pluto_tx_buffer[i]     = int(val.real() * 2000.0) << 4;
-        sdr->phy.pluto_tx_buffer[i + 1] = int(val.imag() * 2000.0) << 4;
-        k++;
+        const auto &a = samples[start + i];
+        const auto &b = samples[start + params.fft_size + i];
+        corr += a * std::conj(b);
     }
 
-    for(size_t i = 0; i < 2; i++)
+    double phase = std::arg(corr);
+
+    // corr ~ exp(-j * w * fft_size)
+    // => w ~= -phase / fft_size
+    return -phase / (double)params.fft_size;
+}
+
+static std::vector<std::complex<double>> apply_cfo_correction(
+    const std::vector<std::complex<double>> &samples,
+    double cfo_rad_per_sample
+)
+{
+    std::vector<std::complex<double>> out(samples.size());
+
+    for (size_t n = 0; n < samples.size(); n++)
     {
-        sdr->phy.pluto_tx_buffer[0 + i] = 0xffff;
-        sdr->phy.pluto_tx_buffer[10 + i] = 0xffff;
+        std::complex<double> rot = std::exp(
+            std::complex<double>(0.0, -cfo_rad_per_sample * (double)n)
+        );
+        out[n] = samples[n] * rot;
     }
+
+    return out;
 }
 
 void process_rx_ofdm_realtime(sdr_global_t *sdr)
@@ -279,47 +321,99 @@ void process_rx_ofdm_realtime(sdr_global_t *sdr)
         sdr->test_bpsk_ofdm.params = init_ofdm_params();
     }
 
-    int sym_len = sdr->test_bpsk_ofdm.params.fft_size + sdr->test_bpsk_ofdm.params.cp_len;
+    const int fft_size = sdr->test_bpsk_ofdm.params.fft_size;
+    const int cp_len   = sdr->test_bpsk_ofdm.params.cp_len;
+    const int sym_len  = fft_size + cp_len;
+
     if ((int)sdr->phy.raw_samples.size() < sym_len) {
+        sdr->test_bpsk_ofdm.rx_data_symbols.clear();
+        sdr->test_bpsk_ofdm.demod_bit_array.clear();
+        sdr->test_bpsk_ofdm.cfo_corrected_samples.clear();
+        sdr->test_bpsk_ofdm.phase_corrected_symbol.clear();
+        sdr->test_bpsk_ofdm.equalized_data_symbols.clear();
+        sdr->test_bpsk_ofdm.detected_symbol_start = 0;
+        sdr->test_bpsk_ofdm.detected_symbols_in_buffer = 0;
+        sdr->test_bpsk_ofdm.detected_cp_metric = 0.0;
+        sdr->test_bpsk_ofdm.estimated_cfo_rad_per_sample = 0.0;
+        sdr->test_bpsk_ofdm.estimated_common_phase = 0.0;
         return;
     }
 
+    // 1. Поиск начала OFDM-символа
     double best_metric = 0.0;
-    int start = find_ofdm_symbol_start(sdr->phy.raw_samples, sdr->test_bpsk_ofdm.params, best_metric);
+    int start = find_ofdm_symbol_start(
+        sdr->phy.raw_samples,
+        sdr->test_bpsk_ofdm.params,
+        best_metric
+    );
 
     sdr->test_bpsk_ofdm.detected_symbol_start = start;
     sdr->test_bpsk_ofdm.detected_cp_metric = best_metric;
-    sdr->test_bpsk_ofdm.detected_symbols_in_buffer =
-        ((int)sdr->phy.raw_samples.size() - start) / sym_len;
 
-    if (sdr->test_bpsk_ofdm.detected_symbols_in_buffer <= 0) {
+    int symbols_in_buffer = ((int)sdr->phy.raw_samples.size() - start) / sym_len;
+    sdr->test_bpsk_ofdm.detected_symbols_in_buffer = symbols_in_buffer;
+
+    if (symbols_in_buffer <= 0) {
+        sdr->test_bpsk_ofdm.rx_data_symbols.clear();
+        sdr->test_bpsk_ofdm.demod_bit_array.clear();
+        sdr->test_bpsk_ofdm.cfo_corrected_samples.clear();
+        sdr->test_bpsk_ofdm.phase_corrected_symbol.clear();
+        sdr->test_bpsk_ofdm.equalized_data_symbols.clear();
         return;
     }
 
-    sdr->test_bpsk_ofdm.rx_data_symbols.clear();
+    // 2. Выровненный OFDM-блок
+    std::vector<std::complex<double>> aligned_ofdm_samples;
+    aligned_ofdm_samples.reserve(symbols_in_buffer * sym_len);
 
-    for (int s = 0; s < sdr->test_bpsk_ofdm.detected_symbols_in_buffer; s++)
+    for (int i = 0; i < symbols_in_buffer * sym_len; i++) {
+        aligned_ofdm_samples.push_back(sdr->phy.raw_samples[start + i]);
+    }
+
+    // 3. Оценка CFO по cyclic prefix
+    double cfo_rad_per_sample = estimate_cfo_from_cp(
+        sdr->phy.raw_samples,
+        start,
+        sdr->test_bpsk_ofdm.params
+    );
+    sdr->test_bpsk_ofdm.estimated_cfo_rad_per_sample = cfo_rad_per_sample;
+
+    // 4. Коррекция CFO
+    sdr->test_bpsk_ofdm.cfo_corrected_samples =
+        apply_cfo_correction(aligned_ofdm_samples, cfo_rad_per_sample);
+
+    // 5. Ручной realtime-demod с фазовой коррекцией по пилотам
+    sdr->test_bpsk_ofdm.rx_data_symbols.clear();
+    sdr->test_bpsk_ofdm.equalized_data_symbols.clear();
+    sdr->test_bpsk_ofdm.phase_corrected_symbol.clear();
+    sdr->test_bpsk_ofdm.estimated_common_phase = 0.0;
+
+    for (int s = 0; s < symbols_in_buffer; s++)
     {
-        int base = start + s * sym_len;
-        if (base + sym_len > (int)sdr->phy.raw_samples.size()) {
+        int base = s * sym_len;
+        if (base + sym_len > (int)sdr->test_bpsk_ofdm.cfo_corrected_samples.size()) {
             break;
         }
 
-        std::vector<std::complex<double>> symbol_no_cp(sdr->test_bpsk_ofdm.params.fft_size);
-        for (int i = 0; i < sdr->test_bpsk_ofdm.params.fft_size; i++) {
-            symbol_no_cp[i] = sdr->phy.raw_samples[base + sdr->test_bpsk_ofdm.params.cp_len + i];
+        std::vector<std::complex<double>> symbol_no_cp(fft_size);
+        for (int i = 0; i < fft_size; i++) {
+            symbol_no_cp[i] =
+                sdr->test_bpsk_ofdm.cfo_corrected_samples[base + cp_len + i];
         }
 
         std::vector<std::complex<double>> freq = fft(symbol_no_cp);
 
+        // Common phase correction по pilot carriers
         std::complex<double> pilot_sum = 0.0;
         for (int i = 0; i < (int)sdr->test_bpsk_ofdm.params.pilot_carriers.size(); i++) {
-            pilot_sum += freq[sdr->test_bpsk_ofdm.params.pilot_carriers[i]];
+            int sc = sdr->test_bpsk_ofdm.params.pilot_carriers[i];
+            pilot_sum += freq[sc];
         }
 
+        double common_phase = 0.0;
         if (std::abs(pilot_sum) > 1e-12) {
-            double phase = std::arg(pilot_sum);
-            std::complex<double> rot = std::exp(std::complex<double>(0.0, -phase));
+            common_phase = std::arg(pilot_sum);
+            std::complex<double> rot = std::exp(std::complex<double>(0.0, -common_phase));
             for (int i = 0; i < (int)freq.size(); i++) {
                 freq[i] *= rot;
             }
@@ -328,6 +422,9 @@ void process_rx_ofdm_realtime(sdr_global_t *sdr)
         if (s == 0) {
             sdr->test_bpsk_ofdm.ofdm_symbol_no_cp = symbol_no_cp;
             sdr->test_bpsk_ofdm.fft_symbol = freq;
+            sdr->test_bpsk_ofdm.phase_corrected_symbol = freq;
+            sdr->test_bpsk_ofdm.estimated_common_phase = common_phase;
+
             sdr->test_bpsk_ofdm.fft_magnitude.resize(freq.size());
             for (int i = 0; i < (int)freq.size(); i++) {
                 sdr->test_bpsk_ofdm.fft_magnitude[i] = std::abs(freq[i]);
@@ -335,16 +432,29 @@ void process_rx_ofdm_realtime(sdr_global_t *sdr)
         }
 
         for (int i = 0; i < (int)sdr->test_bpsk_ofdm.params.data_carriers.size(); i++) {
-            sdr->test_bpsk_ofdm.rx_data_symbols.push_back(
-                freq[sdr->test_bpsk_ofdm.params.data_carriers[i]]
-            );
+            int sc = sdr->test_bpsk_ofdm.params.data_carriers[i];
+            auto val = freq[sc];
+            sdr->test_bpsk_ofdm.rx_data_symbols.push_back(val);
+            sdr->test_bpsk_ofdm.equalized_data_symbols.push_back(val);
         }
     }
 
-    sdr->test_bpsk_ofdm.demod_bit_array = demodulate(sdr->test_bpsk_ofdm.rx_data_symbols, 1);
+    // 6. Обрезаем до ожидаемой длины
+    if (sdr->test_bpsk_ofdm.rx_data_symbols.size() >
+        sdr->test_bpsk_ofdm.modulated_symbols.size()) {
+        sdr->test_bpsk_ofdm.rx_data_symbols.resize(
+            sdr->test_bpsk_ofdm.modulated_symbols.size()
+        );
+    }
 
-    if (sdr->test_bpsk_ofdm.demod_bit_array.size() > sdr->test_bpsk_ofdm.bit_array.size()) {
-        sdr->test_bpsk_ofdm.demod_bit_array.resize(sdr->test_bpsk_ofdm.bit_array.size());
+    sdr->test_bpsk_ofdm.demod_bit_array =
+        demodulate(sdr->test_bpsk_ofdm.rx_data_symbols, 1);
+
+    if (sdr->test_bpsk_ofdm.demod_bit_array.size() >
+        sdr->test_bpsk_ofdm.bit_array.size()) {
+        sdr->test_bpsk_ofdm.demod_bit_array.resize(
+            sdr->test_bpsk_ofdm.bit_array.size()
+        );
     }
 }
 
@@ -381,7 +491,6 @@ void run_sdr(sdr_global_t *sdr)
 
             if (!sdr->sdr_config.is_tx)
             {
-                // Конвертируем сырые данные в комплексные сэмплы
                 for (int i = 0; i < BUFFER_SIZE; i++)
                 {
                     sdr->phy.raw_samples[i] = std::complex<double>(
@@ -390,32 +499,23 @@ void run_sdr(sdr_global_t *sdr)
                     );
                 }
 
-                // Режимы обработки разделены:
-                // use_ofdm == false -> старый BPSK pipeline
-                // use_ofdm == true  -> отдельный OFDM pipeline
                 if (sdr->use_ofdm)
                 {
                     process_rx_ofdm_realtime(sdr);
                 }
                 else
                 {
-                    // 1. Согласованный фильтр (Matched Filter)
                     int nsps = sdr->phy.Nsps;
                     int syms = 5;
                     double beta = 0.75;
                     std::vector<double> filter = srrc(syms, beta, nsps, 0.0f);
 
                     sdr->phy.matched_samples = convolve(sdr->phy.raw_samples, filter);
-
-                    // 2. Символьная синхронизация (Symbol Sync)
                     sdr->phy.symb_sync_samples =
                         clock_recovery_mueller_muller(sdr->phy.matched_samples, nsps);
-
-                    // 3. Частотная синхронизация (Costas Loop)
                     sdr->phy.costas_sync_samples =
                         costas_loop_bpsk(sdr->phy.symb_sync_samples);
 
-                    // Для отладки
                     static int debug_counter_bpsk = 0;
                     if (debug_counter_bpsk++ % 100 == 0)
                     {
@@ -432,12 +532,10 @@ void run_sdr(sdr_global_t *sdr)
             sdr->phy.rx_timeNs = timeNs;
             last_time = timeNs;
 
-            // Переменная для времени отправки сэмплов относительно текущего приема
-            long long tx_time = timeNs + (4 * 1000 * 1000); // на 4 мс в будущее
+            long long tx_time = timeNs + (4 * 1000 * 1000);
 
             void *tx_buffs[] = {sdr->phy.pluto_tx_buffer};
 
-            // Добавляем время, когда нужно передать блок tx_buffer
             for (size_t i = 0; i < 8; i++)
             {
                 uint8_t tx_time_byte = (tx_time >> (i * 8)) & 0xff;

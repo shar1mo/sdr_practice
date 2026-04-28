@@ -1080,10 +1080,10 @@ void test_bpsk_ofdm_demod(sdr_global_t *sdr)
 
 void show_realtime_ofdm_window(sdr_global_t *sdr)
 {
-    static int rows = 5;
+    static int rows = 7;
     static int cols = 1;
-    static float rratios[] = {5, 5, 5, 5, 5};
-    static float cratios[] = {5, 5, 5, 5, 5};
+    static float rratios[] = {5, 5, 5, 5, 5, 5, 5};
+    static float cratios[] = {5, 5, 5, 5, 5, 5, 5};
 
     ImVec2 win_size = ImGui::GetWindowSize();
     win_size.y -= 50;
@@ -1111,6 +1111,24 @@ void show_realtime_ofdm_window(sdr_global_t *sdr)
             ImPlot::EndPlot();
         }
 
+        if (ImPlot::BeginPlot("CFO Corrected OFDM Samples")) {
+            ImPlot::SetupLegend(ImPlotLocation_NorthWest, ImPlotLegendFlags_Reverse);
+
+            std::vector<double> i_vals, q_vals;
+            size_t plot_size = std::min(sdr->test_bpsk_ofdm.cfo_corrected_samples.size(), (size_t)1000);
+            i_vals.reserve(plot_size);
+            q_vals.reserve(plot_size);
+
+            for (size_t i = 0; i < plot_size; i++) {
+                i_vals.push_back(sdr->test_bpsk_ofdm.cfo_corrected_samples[i].real());
+                q_vals.push_back(sdr->test_bpsk_ofdm.cfo_corrected_samples[i].imag());
+            }
+
+            ImPlot::PlotLine("I", i_vals.data(), i_vals.size());
+            ImPlot::PlotLine("Q", q_vals.data(), q_vals.size());
+            ImPlot::EndPlot();
+        }
+
         if (ImPlot::BeginPlot("Detected OFDM Symbol Without CP")) {
             ImPlot::SetupLegend(ImPlotLocation_NorthWest, ImPlotLegendFlags_Reverse);
 
@@ -1128,23 +1146,6 @@ void show_realtime_ofdm_window(sdr_global_t *sdr)
             ImPlot::EndPlot();
         }
 
-        if (ImPlot::BeginPlot("Detected FFT Symbol")) {
-            ImPlot::SetupLegend(ImPlotLocation_NorthWest, ImPlotLegendFlags_Reverse);
-
-            std::vector<double> i_vals, q_vals;
-            i_vals.reserve(sdr->test_bpsk_ofdm.fft_symbol.size());
-            q_vals.reserve(sdr->test_bpsk_ofdm.fft_symbol.size());
-
-            for (size_t i = 0; i < sdr->test_bpsk_ofdm.fft_symbol.size(); i++) {
-                i_vals.push_back(sdr->test_bpsk_ofdm.fft_symbol[i].real());
-                q_vals.push_back(sdr->test_bpsk_ofdm.fft_symbol[i].imag());
-            }
-
-            ImPlot::PlotLine("I", i_vals.data(), i_vals.size());
-            ImPlot::PlotLine("Q", q_vals.data(), q_vals.size());
-            ImPlot::EndPlot();
-        }
-
         if (ImPlot::BeginPlot("Detected FFT Magnitude")) {
             ImPlot::SetupAxes("Subcarrier Index", "Magnitude");
             ImPlot::PlotLine(
@@ -1155,17 +1156,51 @@ void show_realtime_ofdm_window(sdr_global_t *sdr)
             ImPlot::EndPlot();
         }
 
-        if (ImPlot::BeginPlot("Recovered OFDM Data Symbols")) {
-            std::vector<double> i_vals, q_vals;
-            i_vals.reserve(sdr->test_bpsk_ofdm.rx_data_symbols.size());
-            q_vals.reserve(sdr->test_bpsk_ofdm.rx_data_symbols.size());
+        if (ImPlot::BeginPlot("Pilot Phase Corrected FFT Symbol")) {
+            ImPlot::SetupLegend(ImPlotLocation_NorthWest, ImPlotLegendFlags_Reverse);
 
-            for (size_t i = 0; i < sdr->test_bpsk_ofdm.rx_data_symbols.size(); i++) {
-                i_vals.push_back(sdr->test_bpsk_ofdm.rx_data_symbols[i].real());
-                q_vals.push_back(sdr->test_bpsk_ofdm.rx_data_symbols[i].imag());
+            std::vector<double> i_vals, q_vals;
+            i_vals.reserve(sdr->test_bpsk_ofdm.phase_corrected_symbol.size());
+            q_vals.reserve(sdr->test_bpsk_ofdm.phase_corrected_symbol.size());
+
+            for (size_t i = 0; i < sdr->test_bpsk_ofdm.phase_corrected_symbol.size(); i++) {
+                i_vals.push_back(sdr->test_bpsk_ofdm.phase_corrected_symbol[i].real());
+                q_vals.push_back(sdr->test_bpsk_ofdm.phase_corrected_symbol[i].imag());
+            }
+
+            ImPlot::PlotLine("I", i_vals.data(), i_vals.size());
+            ImPlot::PlotLine("Q", q_vals.data(), q_vals.size());
+            ImPlot::EndPlot();
+        }
+
+        if (ImPlot::BeginPlot("Recovered OFDM Data Symbols (Constellation)")) {
+            std::vector<double> i_vals, q_vals;
+            i_vals.reserve(sdr->test_bpsk_ofdm.equalized_data_symbols.size());
+            q_vals.reserve(sdr->test_bpsk_ofdm.equalized_data_symbols.size());
+
+            for (size_t i = 0; i < sdr->test_bpsk_ofdm.equalized_data_symbols.size(); i++) {
+                i_vals.push_back(sdr->test_bpsk_ofdm.equalized_data_symbols[i].real());
+                q_vals.push_back(sdr->test_bpsk_ofdm.equalized_data_symbols[i].imag());
             }
 
             ImPlot::PlotScatter("I/Q", i_vals.data(), q_vals.data(), i_vals.size());
+            ImPlot::EndPlot();
+        }
+
+        if (ImPlot::BeginPlot("OFDM Phase-Corrected Data Symbols (Time Order)")) {
+            ImPlot::SetupLegend(ImPlotLocation_NorthWest, ImPlotLegendFlags_Reverse);
+
+            std::vector<double> i_vals, q_vals;
+            i_vals.reserve(sdr->test_bpsk_ofdm.equalized_data_symbols.size());
+            q_vals.reserve(sdr->test_bpsk_ofdm.equalized_data_symbols.size());
+
+            for (size_t i = 0; i < sdr->test_bpsk_ofdm.equalized_data_symbols.size(); i++) {
+                i_vals.push_back(sdr->test_bpsk_ofdm.equalized_data_symbols[i].real());
+                q_vals.push_back(sdr->test_bpsk_ofdm.equalized_data_symbols[i].imag());
+            }
+
+            ImPlot::PlotLine("I", i_vals.data(), i_vals.size());
+            ImPlot::PlotLine("Q", q_vals.data(), q_vals.size());
             ImPlot::EndPlot();
         }
 
@@ -1175,7 +1210,9 @@ void show_realtime_ofdm_window(sdr_global_t *sdr)
     ImGui::Separator();
     ImGui::Text("Detected symbol start: %d", sdr->test_bpsk_ofdm.detected_symbol_start);
     ImGui::Text("Symbols in buffer: %d", sdr->test_bpsk_ofdm.detected_symbols_in_buffer);
-    ImGui::Text("CP correlation metric: %.4f", sdr->test_bpsk_ofdm.detected_cp_metric);
+    ImGui::Text("CP correlation metric: %.6f", sdr->test_bpsk_ofdm.detected_cp_metric);
+    ImGui::Text("Estimated CFO: %.9f", sdr->test_bpsk_ofdm.estimated_cfo_rad_per_sample);
+    ImGui::Text("Estimated common phase: %.9f", sdr->test_bpsk_ofdm.estimated_common_phase);
 
     int success_counter = 0;
     int compare_size = std::min(

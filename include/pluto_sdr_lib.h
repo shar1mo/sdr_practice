@@ -15,7 +15,7 @@
 #define BUFFER_SIZE 1920 * 2
 
 typedef struct sdr_config_s{
-    const char *name; // usb or ip adress (изменено на const char*)
+    const char *name;
     bool is_tx;
     int buffer_size;
     double tx_bandwidth;
@@ -88,12 +88,18 @@ typedef struct ofdm_test_s{
     std::vector<double> fft_magnitude;
     std::vector<std::complex<double>> ofdm_symbol_no_cp;
 
+    std::vector<std::complex<double>> cfo_corrected_samples;
+    std::vector<std::complex<double>> phase_corrected_symbol;
+    std::vector<std::complex<double>> equalized_data_symbols;
+
     int detected_symbol_start = 0;
     int detected_symbols_in_buffer = 0;
     double detected_cp_metric = 0.0;
+
+    double estimated_cfo_rad_per_sample = 0.0;
+    double estimated_common_phase = 0.0;
 } ofdm_test_t;
 
-// Инициализация
 typedef struct sdr_global_s{
     bool running;
     test_set_t test_set;
@@ -108,7 +114,6 @@ typedef struct sdr_global_s{
     bool use_ofdm = false;
 } sdr_global_t;
 
-// Прототипы функций
 struct SoapySDRDevice *setup_pluto_sdr(sdr_config_t *config);
 struct SoapySDRStream *setup_stream(struct SoapySDRDevice *sdr, sdr_config_t *config, bool isRx);
 void test_bpsk_ofdm_loopback(sdr_global_t *sdr);
@@ -117,10 +122,8 @@ void process_rx_ofdm_realtime(sdr_global_t *sdr);
 
 void close_pluto_sdr(sdr_global_t *sdr);
 
-// Работа с буфферами
 void fill_test_tx_buffer(int16_t *buffer, int size);
 
-// Преобразование сэмплов из двух массивов (I[N], Q[N]) в вид Pluto (buff[N*2] = {I, Q, I, Q, ..., I, Q})
 void transform_to_pluto_type_smples(std::vector<double> &I_part, std::vector<double> &Q_part, int16_t *buffer);
 void transform_from_pluto_type_samples(std::vector<double> &I_part, std::vector<double> &Q_part, int16_t *buffer);
 
